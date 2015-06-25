@@ -1,6 +1,6 @@
 <?php
 
-require_once( dirname(__FILE__) . '/lib/relmeauth.php');
+require_once( __DIR__ . '/lib/relmeauth.php');
 $relmeauth = new relmeauth();
 $error = false;
 
@@ -95,15 +95,15 @@ function _e($content) {
 <?php   if (isset($_POST['post'])) { // user posted ?>
         <p>Tweeting...</p>
 <?php       $tmhOAuth = $relmeauth->tmhOAuth;
-            $tmhOAuth->request('POST', $tmhOAuth->url('statuses/update'), array(
+            $tmhOAuth->request('POST', $tmhOAuth->url('1.1/statuses/update'), array(
               'status' => $_POST['post']
             ));
 ?>
         <p>Twitter's API says:</p>
 <?php     if ($tmhOAuth->response['code'] == 200) {
-              $tmhOAuth->pr(json_decode($tmhOAuth->response['response']));
+              print_r(json_decode($tmhOAuth->response['response']));
           } else {
-              $tmhOAuth->pr(htmlentities($tmhOAuth->response['response']));
+              print_r($tmhOAuth->response['response']);
           }
         } // /user posted
       } else { // no write access yet, so encourage user to upgrade
