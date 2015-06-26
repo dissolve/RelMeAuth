@@ -6,11 +6,18 @@ $error = false;
 
 if ( isset($_GET['logout']) ) {
   session_destroy();
-  $relmeauth->redirect();
+  $url = $relmeauth->here();
+  header( "Location: $url" );
+  die();
 }
 elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
   $ok = $relmeauth->complete_oauth( $_REQUEST['oauth_verifier'] );
   // error message on false!
+  if($ok){
+    $url = $relmeauth->here();
+    header( "Location: $url" );
+    die();
+  }
 }
 else if (isset($_REQUEST['denied'] ) ) {
   // user cancelled login
@@ -28,7 +35,11 @@ else if ( isset($_POST['url']) ) {
   $_SESSION['relmeauth']['write'] = $_POST['write'];
 
   // discover relme on the url
-  $relmeauth->main( $user_url, $_POST['write'] );
+  $redir_url = $relmeauth->main( $user_url, $_POST['write'] );
+  if($redir_url){
+    header( "Location: $redir_url" );
+    die();
+  }
 }
 else if ($relmeauth->is_loggedin()) {
   $relmeauth->create_from_session();

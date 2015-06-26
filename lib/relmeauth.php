@@ -47,6 +47,19 @@ class relmeauth {
     'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
     ));
   }
+  function create_from_data($provider, $token, $secret) {
+    global $providers;
+
+    $config = $providers[$provider];
+
+    // create tmhOAuth from data
+    $this->tmhOAuth = new tmhOAuth(array(
+    'consumer_key' => $config['keys']['consumer_key'],
+    'consumer_secret' => $config['keys']['consumer_secret'],
+    'user_token' => $token,
+    'user_secret' => $secret
+    ));
+  }
 
   function main($user_url, $askwrite) {
 
@@ -56,8 +69,8 @@ class relmeauth {
     // first try to authenticate directly with the URL given
     if ($this->is_provider($user_url)) {
       $_SESSION['relmeauth']['direct'] = true;
-      if ($this->authenticate_url($user_url, $askwrite)) {
-        return true; // bail once something claims to authenticate
+      if ($url = $this->authenticate_url($user_url, $askwrite)) {
+        return $url; // bail once something claims to authenticate
       }
       unset($_SESSION['relmeauth']['direct']);
     }
@@ -90,8 +103,8 @@ class relmeauth {
       if ($this->is_provider($external_rel) &&
           $this->confirm_rel($user_url, $external_rel)) {
         // We could keep this as a URL we actually try to auth, for debugging
-        if ($this->authenticate_url($external_rel, $askwrite)) {
-          return true; // bail once something claims to authenticate
+        if ($url = $this->authenticate_url($external_rel, $askwrite)) {
+          return $url; // return url once something claims to authenticate
         }
       }
     endforeach; // external_rels
@@ -129,9 +142,9 @@ class relmeauth {
               if ($source_rel_confirmed) {
                 $_SESSION['relmeauth']['url2'] = $source_rel;
               }
-              if ($this->authenticate_url($source2_rel, $askwrite)) {
+              if ($url = $this->authenticate_url($source2_rel, $askwrite)) {
                 // this exits if it succeeds. next statement unnecessary.
-                return true; // bail once something claims to authenticate
+                return $url; // bail once something claims to authenticate
               }
               $_SESSION['relmeauth']['url2'] = '';
             }
@@ -142,40 +155,17 @@ class relmeauth {
     // if successful, should have returned true, which can be returned
     endforeach; // source_rels
 
-/*
-    //debugging
-    $debugurls = $this->discover('http://twitter.com/kevinmarks/');
-
-    //end debugging
-*/
 
     // otherwise, no URLs worked.
     $source_rels = implode(', ', array_keys($source_rels)) .
      ($source2_tried && count($source2_tried)>=0 ? ', ' .
                            implode(', ', array_keys($source2_tried)) : '')
-/*
-     .
-     ($debugurls && count($debugurls)>=0 ? '. debug: ' .
-                           implode(', ', array_keys($debugurls)) : '')
-*/
                            ;
 
     $this->error('None of your providers are supported. Tried ' . $source_rels . '.');
 
     return false;
 
-/*
-// old code that first confirmed all rel-me links, and then tried as a batch
-    // see if any of the relmes match back - we check the rels in the order
-    // they are listed in the HTML
-    $confirmed_rels = $this->confirm_rels($user_url, $source_rels);
-    if ($confirmed_rels != false) {
-      return $this->authenticate($confirmed_rels);
-    } else {
-      // error message will have already been set
-      return false;
-    }
-*/
   }
 
   function request($keys, $method, $url, $params=array(), $useauth=true) {
@@ -223,7 +213,7 @@ class relmeauth {
   /**
    * Wrapper for the OAuth authentication process for a URL
    *
-   * @return false if authentication failed
+   * @return false if authentication failed, URL to redirect to if successful
    * @author Matt Harris and Tantek Çelik
    */
   function authenticate_url($confirmed_rel, $askwrite=false) {
@@ -253,11 +243,10 @@ class relmeauth {
         $_SESSION['relmeauth']['provider'] = $provider['host'];
         $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
         $_SESSION['relmeauth']['token']    = $user['oauth_token'];
-      $url = ($askwrite ? $config['urls']['authorize']
+          $url = ($askwrite ? $config['urls']['authorize']
                         : $config['urls']['authenticate']) . '?'
              . "oauth_token={$user['oauth_token']}";
-        $this->redirect($url);
-      return true;
+        return $url;
       } else {
         $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
       }
@@ -265,23 +254,6 @@ class relmeauth {
     return false;
   }
 
-  /**
-   * Wrapper for the OAuth authentication process
-   *
-   * @return false upon failure
-   * @author Matt Harris and Tantek Çelik
-   */
-  function authenticate($confirmed_rels) {
-    global $providers;
-
-    foreach ($confirmed_rels as $host => $details) :
-      if (authenticate_url($host))
-        return true;
-    endforeach; // confirmed_rels
-
-    $this->error('None of your providers are supported. Tried ' . implode(', ', array_keys($confirmed_rels)) . '.');
-    return false;
-  }
 
   function complete_oauth( $verifier ) {
     global $providers;
@@ -318,7 +290,7 @@ class relmeauth {
       // will work for me - because all we do is go 'oh Twitter, sure, login there and you're good to go
       // the rel=me bit doesn't get confirmed it belongs to the user
       $this->verify( $config );
-      $this->redirect();
+      return true;
     }
     $this->error("There was a problem authenticating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
     return false;
@@ -345,8 +317,8 @@ class relmeauth {
     $given = self::normalise_url($_SESSION['relmeauth']['url']);
     $found = self::normalise_url(self::expand_tco($creds[ $config['verify']['url'] ]));
 
-    $_SESSION['relmeauth']['debug']['verify']['given'] = $given;
-    $_SESSION['relmeauth']['debug']['verify']['found'] = $found;
+    //$_SESSION['relmeauth']['debug']['verify']['given'] = $given;
+    //$_SESSION['relmeauth']['debug']['verify']['found'] = $found;
 
     if ( $given != $found &&
          array_key_exists('url2', $_SESSION['relmeauth']))
@@ -399,13 +371,13 @@ class relmeauth {
    */
   function confirm_rel($user_url, $source_rel) {
     $othermes = $this->discover($source_rel, false);
-    $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
+    //$_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
     if (is_array( $othermes)) {
       $othermes = array_map(array('relmeauth', 'deref_redirect'), $othermes);
       $user_url = self::normalise_url($user_url);
 
       if (in_array($user_url, $othermes)) {
-        $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
+        //$_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
         return true;
       }
     }
@@ -422,7 +394,7 @@ class relmeauth {
    */
   function confirms_rel($user_url, $local_url, $source_rel) {
     $othermes = $this->discover( $source_rel, false );
-    $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
+    //$_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
     if ( is_array( $othermes ) ) {
       $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
       $user_url = self::normalise_url($user_url);
@@ -430,7 +402,7 @@ class relmeauth {
 
       if (in_array($user_url, $othermes) ||
           in_array($local_url, $othermes)) {
-        $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
+        //$_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
         return true;
       }
     }
@@ -697,11 +669,6 @@ class relmeauth {
     return $url;
   }
 
-  function redirect($url=false) {
-     $url = ! $url ? $this->here() : $url;
-     header( "Location: $url" );
-     die;
-   }
 
   function here($withqs=false) {
      $url = sprintf('%s://%s%s',
